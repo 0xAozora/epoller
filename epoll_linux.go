@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package epoller
@@ -12,7 +13,7 @@ import (
 
 type epoll struct {
 	fd          int
-	connections map[int]net.Conn
+	connections map[uint64]net.Conn
 	lock        *sync.RWMutex
 	connbuf     []net.Conn
 	events      []unix.EpollEvent
@@ -26,7 +27,7 @@ func NewPoller() (Poller, error) {
 	return &epoll{
 		fd:          fd,
 		lock:        &sync.RWMutex{},
-		connections: make(map[int]net.Conn),
+		connections: make(map[uint64]net.Conn),
 		connbuf:     make([]net.Conn, 128, 128),
 		events:      make([]unix.EpollEvent, 128, 128),
 	}, nil
@@ -40,7 +41,7 @@ func NewPollerWithBuffer(count int) (Poller, error) {
 	return &epoll{
 		fd:          fd,
 		lock:        &sync.RWMutex{},
-		connections: make(map[int]net.Conn),
+		connections: make(map[uint64]net.Conn),
 		connbuf:     make([]net.Conn, count, count),
 		events:      make([]unix.EpollEvent, count, count),
 	}, nil
@@ -54,14 +55,11 @@ func (e *epoll) Close() error {
 	return unix.Close(e.fd)
 }
 
-func (e *epoll) Add(conn net.Conn) error {
-	// Extract file descriptor associated with the connection
-	fd := getFD(unsafe.Pointer(conn.(*net.TCPConn)))
-
+func (e *epoll) Add(conn net.Conn, fd uint64) error {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
-	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_ADD, fd, &unix.EpollEvent{Events: unix.POLLIN | unix.POLLHUP, Fd: int32(fd)})
+	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_ADD, int(fd), &unix.EpollEvent{Events: unix.POLLIN | unix.POLLHUP, Fd: int32(fd)})
 	if err != nil {
 		return err
 	}
@@ -69,9 +67,8 @@ func (e *epoll) Add(conn net.Conn) error {
 	return nil
 }
 
-func (e *epoll) Remove(conn net.Conn) error {
-	fd := getFD(unsafe.Pointer(conn.(*net.TCPConn)))
-	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_DEL, fd, nil)
+func (e *epoll) Remove(fd uint64) error {
+	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_DEL, int(fd), nil)
 	if err != nil {
 		return err
 	}
@@ -96,7 +93,7 @@ retry:
 	var connections = make([]net.Conn, 0, n)
 	e.lock.RLock()
 	for i := 0; i < n; i++ {
-		conn := e.connections[int(events[i].Fd)]
+		conn := e.connections[uint64(events[i].Fd)]
 		if (events[i].Events & unix.POLLHUP) == unix.POLLHUP {
 			conn.Close()
 		}
@@ -121,7 +118,7 @@ retry:
 	var connections = e.connbuf[:0]
 	e.lock.RLock()
 	for i := 0; i < n; i++ {
-		conn := e.connections[int(e.events[i].Fd)]
+		conn := e.connections[uint64(e.events[i].Fd)]
 		if (e.events[i].Events & unix.POLLHUP) == unix.POLLHUP {
 			conn.Close()
 		}

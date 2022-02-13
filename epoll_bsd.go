@@ -1,3 +1,4 @@
+//go:build darwin || netbsd || freebsd || openbsd || dragonfly
 // +build darwin netbsd freebsd openbsd dragonfly
 
 package epoller
@@ -12,7 +13,7 @@ type epoll struct {
 	fd          int
 	ts          syscall.Timespec
 	changes     []syscall.Kevent_t
-	connections map[int]net.Conn
+	connections map[uint64]net.Conn
 	mu          *sync.RWMutex
 	connbuf     []net.Conn
 	events      []syscall.Kevent_t
@@ -38,7 +39,7 @@ func NewPoller() (Poller, error) {
 		mu:          &sync.RWMutex{},
 		connbuf:     make([]net.Conn, 128, 128),
 		events:      make([]syscall.Kevent_t, 128, 128),
-		connections: make(map[int]net.Conn),
+		connections: make(map[uint64]net.Conn),
 	}, nil
 }
 
@@ -60,7 +61,7 @@ func NewPollerWithBuffer(count int) (Poller, error) {
 		fd:          p,
 		ts:          syscall.NsecToTimespec(1e9),
 		mu:          &sync.RWMutex{},
-		connections: make(map[int]net.Conn),
+		connections: make(map[uint64]net.Conn),
 		connbuf:     make([]net.Conn, count, count),
 		events:      make([]syscall.Kevent_t, count, count),
 	}, nil
@@ -75,15 +76,13 @@ func (e *epoll) Close() error {
 	return syscall.Close(e.fd)
 }
 
-func (e *epoll) Add(conn net.Conn) error {
-	fd := getFD(unsafe.Pointer(conn.(*net.TCPConn)))
-
+func (e *epoll) Add(conn net.Conn, fd uint64) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	e.changes = append(e.changes,
 		syscall.Kevent_t{
-			Ident: uint64(fd), Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
+			Ident: fd, Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
 		},
 	)
 
@@ -91,9 +90,7 @@ func (e *epoll) Add(conn net.Conn) error {
 	return nil
 }
 
-func (e *epoll) Remove(conn net.Conn) error {
-	fd := getFD(unsafe.Pointer(conn.(*net.TCPConn)))
-
+func (e *epoll) Remove(fd uint64) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -101,7 +98,7 @@ func (e *epoll) Remove(conn net.Conn) error {
 		e.changes = nil
 	} else {
 		changes := make([]syscall.Kevent_t, 0, len(e.changes)-1)
-		ident := uint64(fd)
+		ident := fd
 		for _, ke := range e.changes {
 			if ke.Ident != ident {
 				changes = append(changes)
@@ -133,7 +130,7 @@ retry:
 	var connections = make([]net.Conn, 0, n)
 	e.mu.RLock()
 	for i := 0; i < n; i++ {
-		conn := e.connections[int(events[i].Ident)]
+		conn := e.connections[events[i].Ident]
 		if (events[i].Flags & syscall.EV_EOF) == syscall.EV_EOF {
 			conn.Close()
 		}
@@ -161,7 +158,7 @@ retry:
 	var connections = e.connbuf[:0]
 	e.mu.RLock()
 	for i := 0; i < n; i++ {
-		conn := e.connections[int(e.events[i].Ident)]
+		conn := e.connections[e.events[i].Ident]
 		if (e.events[i].Flags & syscall.EV_EOF) == syscall.EV_EOF {
 			conn.Close()
 		}

@@ -7,6 +7,7 @@ import (
 	"net"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func TestPoller(t *testing.T) {
@@ -31,7 +32,7 @@ func TestPoller(t *testing.T) {
 				return
 			}
 
-			poller.Add(conn)
+			poller.Add(conn, GetFD(unsafe.Pointer(conn.(*net.TCPConn))))
 		}
 	}()
 
@@ -73,7 +74,7 @@ func TestPoller(t *testing.T) {
 				n, err := conn.Read(buf)
 				if err != nil {
 					if err == io.EOF || errors.Is(err, net.ErrClosed) {
-						poller.Remove(conn)
+						poller.Remove(GetFD(unsafe.Pointer(conn.(*net.TCPConn))))
 						conn.Close()
 					} else {
 						t.Error(err)
@@ -144,7 +145,7 @@ func TestPoller_growstack(t *testing.T) {
 				return
 			}
 
-			poller.Add(conn)
+			poller.Add(conn, GetFD(unsafe.Pointer(conn.(*net.TCPConn))))
 		}
 	}()
 

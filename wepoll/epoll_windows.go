@@ -1,3 +1,4 @@
+//go:build windows && cgo
 // +build windows,cgo
 
 package wepoll
@@ -7,7 +8,6 @@ package wepoll
 import "C"
 import (
 	"errors"
-	"unsafe"
 
 	"net"
 	"sync"
@@ -64,9 +64,9 @@ func (e *Epoll) Close() error {
 	}
 }
 
-func (e *Epoll) Add(conn net.Conn) error {
+func (e *Epoll) Add(conn net.Conn, f uint64) error {
 	// Extract file descriptor associated with the connection
-	fd := C.SOCKET(getFD(unsafe.Pointer(conn.(*net.TCPConn))))
+	fd := C.SOCKET(f)
 	var ev C.epoll_event
 	ev = C.set_epoll_event(C.EPOLLIN|C.EPOLLHUP, C.SOCKET(fd))
 	e.lock.Lock()
@@ -79,9 +79,9 @@ func (e *Epoll) Add(conn net.Conn) error {
 	return nil
 }
 
-func (e *Epoll) Remove(conn net.Conn) error {
+func (e *Epoll) Remove(f uint64) error {
 
-	fd := C.SOCKET(getFD(unsafe.Pointer(conn.(*net.TCPConn))))
+	fd := C.SOCKET(f)
 	var ev C.epoll_event
 	err := C.epoll_ctl(e.fd, C.EPOLL_CTL_DEL, C.SOCKET(fd), &ev)
 	if err == -1 {
@@ -151,10 +151,4 @@ func (e *Epoll) WaitChan(count int) <-chan []net.Conn {
 		}
 	}()
 	return ch
-}
-
-// *net.TCPListener | *net.TCPConn
-func getFD(p unsafe.Pointer) uint64 {
-	pfd := *(*unsafe.Pointer)(p)
-	return *(*uint64)(unsafe.Pointer(uintptr(pfd) + uintptr(16)))
 }

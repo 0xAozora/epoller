@@ -6,8 +6,8 @@ import (
 )
 
 type Poller interface {
-	Add(conn net.Conn) error
-	Remove(conn net.Conn) error
+	Add(conn net.Conn, fd uint64) error
+	Remove(fd uint64) error
 	Wait(count int) ([]net.Conn, error)
 	WaitWithBuffer() ([]net.Conn, error)
 	WaitChan(count int) <-chan []net.Conn
@@ -15,7 +15,7 @@ type Poller interface {
 }
 
 // *net.TCPListener | *net.TCPConn
-func getFD(p unsafe.Pointer) int64 {
+func GetFD(p unsafe.Pointer) uint64 {
 	pfd := *(*unsafe.Pointer)(p)
-	return *(*int64)(unsafe.Pointer(uintptr(pfd) + uintptr(16)))
+	return *(*uint64)(unsafe.Pointer(uintptr(pfd) + uintptr(16)))
 }
