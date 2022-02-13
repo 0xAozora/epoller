@@ -1,5 +1,5 @@
-module github.com/smallnest/epoller
+module github.com/0xAozora/epoller
 
-go 1.12
+go 1.17
 
-require golang.org/x/sys v0.0.0-20210525143221-35b2ab0089ea
+require golang.org/x/sys v0.0.0-20220209214540-3681064d5158

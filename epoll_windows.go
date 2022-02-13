@@ -1,9 +1,10 @@
+//go:build windows && cgo
 // +build windows,cgo
 
 package epoller
 
 import (
-	"github.com/smallnest/epoller/wepoll"
+	"github.com/0xAozora/epoller/wepoll"
 )
 
 type epoll = wepoll.Epoll
