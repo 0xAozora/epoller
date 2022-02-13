@@ -2,7 +2,7 @@ package epoller
 
 import (
 	"net"
-	"syscall"
+	"unsafe"
 )
 
 type Poller interface {
@@ -14,17 +14,8 @@ type Poller interface {
 	Close() error
 }
 
-func socketFD(conn net.Conn) int {
-	if con, ok := conn.(syscall.Conn); ok {
-		raw, err := con.SyscallConn()
-		if err != nil {
-			return 0
-		}
-		sfd := 0
-		raw.Control(func(fd uintptr) {
-			sfd = int(fd)
-		})
-		return sfd
-	}
-	return 0
+// *net.TCPListener | *net.TCPConn
+func getFD(p unsafe.Pointer) int64 {
+	pfd := *(*unsafe.Pointer)(p)
+	return *(*int64)(unsafe.Pointer(uintptr(pfd) + uintptr(16)))
 }

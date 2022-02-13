@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"syscall"
 	"testing"
+	"unsafe"
 )
 
 func reflectSocketFDAsUint(conn net.Conn) uint64 {
@@ -30,9 +31,13 @@ func rawSocketFD(conn net.Conn) uint64 {
 	}
 	return 0
 }
+func pointerFD(conn net.Conn) uint64 {
+	pfd := *(*unsafe.Pointer)(unsafe.Pointer(conn.(*net.UDPConn)))
+	return *(*uint64)(unsafe.Pointer(uintptr(pfd) + uintptr(16)))
+}
 
 func BenchmarkSocketFdReflect(b *testing.B) {
-	var con, _ = net.Dial(`udp`, "8.8.8.8:53")
+	con, _ := net.Dial(`udp`, "8.8.8.8:53")
 	fd := uint64(0)
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -50,6 +55,18 @@ func BenchmarkSocketFdRaw(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		fd = rawSocketFD(con)
+	}
+	runtime.KeepAlive(fd)
+}
+
+func BenchmarkSocketFdPointer(b *testing.B) {
+	con, _ := net.Dial(`udp`, "8.8.8.8:53")
+	fd := uint64(0)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		fd = pointerFD(con)
 	}
 	runtime.KeepAlive(fd)
 }

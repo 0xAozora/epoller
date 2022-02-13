@@ -7,7 +7,7 @@ package wepoll
 import "C"
 import (
 	"errors"
-	"syscall"
+	"unsafe"
 
 	"net"
 	"sync"
@@ -66,7 +66,7 @@ func (e *Epoll) Close() error {
 
 func (e *Epoll) Add(conn net.Conn) error {
 	// Extract file descriptor associated with the connection
-	fd := C.SOCKET(socketFDAsUint(conn))
+	fd := C.SOCKET(getFD(unsafe.Pointer(conn.(*net.TCPConn))))
 	var ev C.epoll_event
 	ev = C.set_epoll_event(C.EPOLLIN|C.EPOLLHUP, C.SOCKET(fd))
 	e.lock.Lock()
@@ -81,7 +81,7 @@ func (e *Epoll) Add(conn net.Conn) error {
 
 func (e *Epoll) Remove(conn net.Conn) error {
 
-	fd := C.SOCKET(socketFDAsUint(conn))
+	fd := C.SOCKET(getFD(unsafe.Pointer(conn.(*net.TCPConn))))
 	var ev C.epoll_event
 	err := C.epoll_ctl(e.fd, C.EPOLL_CTL_DEL, C.SOCKET(fd), &ev)
 	if err == -1 {
@@ -153,17 +153,8 @@ func (e *Epoll) WaitChan(count int) <-chan []net.Conn {
 	return ch
 }
 
-func socketFDAsUint(conn net.Conn) uint64 {
-	if con, ok := conn.(syscall.Conn); ok {
-		raw, err := con.SyscallConn()
-		if err != nil {
-			return 0
-		}
-		sfd := uint64(0)
-		raw.Control(func(fd uintptr) {
-			sfd = uint64(fd)
-		})
-		return sfd
-	}
-	return 0
+// *net.TCPListener | *net.TCPConn
+func getFD(p unsafe.Pointer) uint64 {
+	pfd := *(*unsafe.Pointer)(p)
+	return *(*uint64)(unsafe.Pointer(uintptr(pfd) + uintptr(16)))
 }
