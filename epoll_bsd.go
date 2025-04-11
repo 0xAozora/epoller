@@ -15,13 +15,14 @@ var _ Poller = (*Epoll)(nil)
 // Epoll is a epoll based poller.
 type Epoll struct {
 	fd int
-	ts syscall.Timespec
 
 	connBufferSize int
 	mu             *sync.RWMutex
 	changes        []syscall.Kevent_t
 	conns          map[int]net.Conn
 	connbuf        []net.Conn
+
+	polling bool
 }
 
 // NewPoller creates a new poller instance.
@@ -46,11 +47,10 @@ func newPollerWithBuffer(count int) (*Epoll, error) {
 
 	return &Epoll{
 		fd:             p,
-		ts:             syscall.NsecToTimespec(1e9),
 		connBufferSize: count,
 		mu:             &sync.RWMutex{},
 		conns:          make(map[int]net.Conn),
-		connbuf:        make([]net.Conn, count, count),
+		connbuf:        make([]net.Conn, count),
 	}, nil
 }
 
@@ -80,16 +80,24 @@ func (e *Epoll) Add(conn net.Conn) error {
 		return errors.New("udev: unix.SetNonblock failed")
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	event := syscall.Kevent_t{
+		Ident: uint64(fd), Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
+	}
 
-	e.changes = append(e.changes,
-		syscall.Kevent_t{
-			Ident: uint64(fd), Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
-		},
-	)
+	e.mu.Lock()
+
+	if !e.polling {
+		e.changes = append(e.changes, event)
+	} else {
+		syscall.Kevent(e.fd, []syscall.Kevent_t{{
+			Ident:  0,
+			Filter: syscall.EVFILT_USER,
+			Fflags: syscall.NOTE_TRIGGER,
+		}, event}, nil, nil)
+	}
 
 	e.conns[fd] = conn
+	e.mu.Unlock()
 
 	return nil
 }
@@ -99,23 +107,24 @@ func (e *Epoll) Add(conn net.Conn) error {
 func (e *Epoll) Remove(conn net.Conn) error {
 	fd := socketFD(conn)
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	event := syscall.Kevent_t{
+		Ident: uint64(fd), Flags: syscall.EV_DELETE, Filter: syscall.EVFILT_READ,
+	}
 
-	if len(e.changes) <= 1 {
-		e.changes = nil
+	e.mu.Lock()
+
+	if !e.polling {
+		e.changes = append(e.changes, event)
 	} else {
-		changes := make([]syscall.Kevent_t, 0, len(e.changes)-1)
-		ident := uint64(fd)
-		for _, ke := range e.changes {
-			if ke.Ident != ident {
-				changes = append(changes, ke)
-			}
-		}
-		e.changes = changes
+		syscall.Kevent(e.fd, []syscall.Kevent_t{{
+			Ident:  0,
+			Filter: syscall.EVFILT_USER,
+			Fflags: syscall.NOTE_TRIGGER,
+		}, event}, nil, nil)
 	}
 
 	delete(e.conns, fd)
+	e.mu.Unlock()
 
 	return nil
 }
@@ -126,16 +135,22 @@ func (e *Epoll) Wait(count int) ([]net.Conn, error) {
 
 	e.mu.RLock()
 	changes := e.changes
+	// Its "ok" to write in an RLock here, as we are the only ones reading those
+	// And we prevent Add and Remove to access them
+	e.changes = e.changes[:0]
+	e.polling = true
 	e.mu.RUnlock()
 
 retry:
-	n, err := syscall.Kevent(e.fd, changes, events, &e.ts)
+	n, err := syscall.Kevent(e.fd, changes, events, nil)
 	if err != nil {
 		if err == syscall.EINTR {
 			goto retry
 		}
+		e.polling = false
 		return nil, err
 	}
+	e.polling = false
 
 	var conns []net.Conn
 	if e.connBufferSize == 0 {
