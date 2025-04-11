@@ -9,10 +9,6 @@ import (
 
 type epoll = wepoll.Epoll
 
-func NewPoller() (Poller, error) {
-	return wepoll.NewPoller()
-}
-
-func NewPollerWithBuffer(count int) (Poller, error) {
-	return wepoll.NewPollerWithBuffer(count)
+func NewPoller(connBufferSize int) (Poller, error) {
+	return wepoll.NewPoller(connBufferSize)
 }

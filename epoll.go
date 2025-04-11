@@ -9,9 +9,7 @@ type Poller interface {
 	Add(conn net.Conn, fd uint64) error
 	Remove(fd uint64) error
 	Wait(count int) ([]net.Conn, error)
-	WaitWithBuffer() ([]net.Conn, error)
-	WaitChan(count int) <-chan []net.Conn
-	Close() error
+	Close(closeConns bool) error
 }
 
 // *net.TCPListener | *net.TCPConn

@@ -14,7 +14,7 @@ func TestPoller(t *testing.T) {
 	num := 10
 	msgPerConn := 10
 
-	poller, err := NewPoller()
+	poller, err := NewPoller(0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ type netPoller struct {
 func TestPoller_growstack(t *testing.T) {
 	var nps []netPoller
 	for i := 0; i < 2; i++ {
-		poller, err := NewPoller()
+		poller, err := NewPoller(0)
 		if err != nil {
 			t.Fatal(err)
 		}
