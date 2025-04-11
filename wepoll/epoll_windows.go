@@ -110,8 +110,7 @@ func (e *Epoll) Wait(count int) ([]net.Conn, error) {
 
 	e.lock.RLock()
 	for i := 0; i < int(n); i++ {
-		fd := C.get_epoll_event(events[i])
-		//fmt.Println("get_epoll_event i:,fd: ", i, fd)
+		fd := C.get_epoll_event(e.events[i])
 		conn := e.conns[int(fd)]
 		conns = append(conns, conn)
 	}
