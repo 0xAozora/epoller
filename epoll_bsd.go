@@ -11,12 +11,13 @@ import (
 
 type epoll struct {
 	fd          int
-	ts          syscall.Timespec
 	changes     []syscall.Kevent_t
 	connections map[uint64]net.Conn
 	mu          *sync.RWMutex
 	connbuf     []net.Conn
 	events      []syscall.Kevent_t
+
+	polling bool
 }
 
 func NewPoller() (Poller, error) {
@@ -35,7 +36,6 @@ func NewPoller() (Poller, error) {
 
 	return &epoll{
 		fd:          p,
-		ts:          syscall.NsecToTimespec(1e9),
 		mu:          &sync.RWMutex{},
 		connbuf:     make([]net.Conn, 128, 128),
 		events:      make([]syscall.Kevent_t, 128, 128),
@@ -59,7 +59,6 @@ func NewPollerWithBuffer(count int) (Poller, error) {
 
 	return &epoll{
 		fd:          p,
-		ts:          syscall.NsecToTimespec(1e9),
 		mu:          &sync.RWMutex{},
 		connections: make(map[uint64]net.Conn),
 		connbuf:     make([]net.Conn, count, count),
@@ -77,37 +76,48 @@ func (e *epoll) Close() error {
 }
 
 func (e *epoll) Add(conn net.Conn, fd uint64) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 
-	e.changes = append(e.changes,
-		syscall.Kevent_t{
-			Ident: fd, Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
-		},
-	)
+	event := syscall.Kevent_t{
+		Ident: fd, Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
+	}
+
+	e.mu.Lock()
+
+	if !e.polling {
+		e.changes = append(e.changes, event)
+	} else {
+		syscall.Kevent(e.fd, []syscall.Kevent_t{{
+			Ident:  0,
+			Filter: syscall.EVFILT_USER,
+			Fflags: syscall.NOTE_TRIGGER,
+		}, event}, nil, nil)
+	}
 
 	e.connections[fd] = conn
+	e.mu.Unlock()
 	return nil
 }
 
 func (e *epoll) Remove(fd uint64) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 
-	if len(e.changes) <= 1 {
-		e.changes = nil
+	event := syscall.Kevent_t{
+		Ident: fd, Flags: syscall.EV_DELETE, Filter: syscall.EVFILT_READ,
+	}
+
+	e.mu.Lock()
+
+	if !e.polling {
+		e.changes = append(e.changes, event)
 	} else {
-		changes := make([]syscall.Kevent_t, 0, len(e.changes)-1)
-		ident := fd
-		for _, ke := range e.changes {
-			if ke.Ident != ident {
-				changes = append(changes)
-			}
-		}
-		e.changes = changes
+		syscall.Kevent(e.fd, []syscall.Kevent_t{{
+			Ident:  0,
+			Filter: syscall.EVFILT_USER,
+			Fflags: syscall.NOTE_TRIGGER,
+		}, event}, nil, nil)
 	}
 
 	delete(e.connections, fd)
+	e.mu.Unlock()
 	return nil
 }
 
@@ -116,16 +126,19 @@ func (e *epoll) Wait(count int) ([]net.Conn, error) {
 
 	e.mu.RLock()
 	changes := e.changes
+	e.changes = e.changes[:0] // Allows to reuse the space
+	e.polling = true
 	e.mu.RUnlock()
 
 retry:
-	n, err := syscall.Kevent(e.fd, changes, events, &e.ts)
+	n, err := syscall.Kevent(e.fd, changes, events, nil)
 	if err != nil {
 		if err == syscall.EINTR {
 			goto retry
 		}
 		return nil, err
 	}
+	e.polling = false
 
 	var connections = make([]net.Conn, 0, n)
 	e.mu.RLock()
@@ -144,16 +157,19 @@ retry:
 func (e *epoll) WaitWithBuffer() ([]net.Conn, error) {
 	e.mu.RLock()
 	changes := e.changes
+	e.changes = e.changes[:0]
+	e.polling = true
 	e.mu.RUnlock()
 
 retry:
-	n, err := syscall.Kevent(e.fd, changes, e.events, &e.ts)
+	n, err := syscall.Kevent(e.fd, changes, e.events, nil)
 	if err != nil {
 		if err == syscall.EINTR {
 			goto retry
 		}
 		return nil, err
 	}
+	e.polling = false
 
 	var connections = e.connbuf[:0]
 	e.mu.RLock()
