@@ -37,8 +37,8 @@ func NewPoller() (Poller, error) {
 	return &epoll{
 		fd:          p,
 		mu:          &sync.RWMutex{},
-		connbuf:     make([]net.Conn, 128, 128),
-		events:      make([]syscall.Kevent_t, 128, 128),
+		connbuf:     make([]net.Conn, 128),
+		events:      make([]syscall.Kevent_t, 128),
 		connections: make(map[uint64]net.Conn),
 	}, nil
 }
@@ -61,8 +61,8 @@ func NewPollerWithBuffer(count int) (Poller, error) {
 		fd:          p,
 		mu:          &sync.RWMutex{},
 		connections: make(map[uint64]net.Conn),
-		connbuf:     make([]net.Conn, count, count),
-		events:      make([]syscall.Kevent_t, count, count),
+		connbuf:     make([]net.Conn, count),
+		events:      make([]syscall.Kevent_t, count),
 	}, nil
 }
 
@@ -122,7 +122,7 @@ func (e *epoll) Remove(fd uint64) error {
 }
 
 func (e *epoll) Wait(count int) ([]net.Conn, error) {
-	events := make([]syscall.Kevent_t, count, count)
+	events := make([]syscall.Kevent_t, count)
 
 	e.mu.RLock()
 	changes := e.changes

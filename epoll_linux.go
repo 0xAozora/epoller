@@ -73,8 +73,8 @@ func (e *epoll) Remove(fd uint64) error {
 		return err
 	}
 	e.lock.Lock()
-	defer e.lock.Unlock()
 	delete(e.connections, fd)
+	e.lock.Unlock()
 	return nil
 }
 

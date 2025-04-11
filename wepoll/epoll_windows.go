@@ -31,8 +31,8 @@ func NewPoller() (*Epoll, error) {
 		fd:          fd,
 		lock:        &sync.RWMutex{},
 		connections: make(map[int]net.Conn),
-		connbuf:     make([]net.Conn, 128, 128),
-		events:      make([]C.epoll_event, 128, 128),
+		connbuf:     make([]net.Conn, 128),
+		events:      make([]C.epoll_event, 128),
 	}, nil
 }
 
@@ -88,8 +88,8 @@ func (e *Epoll) Remove(f uint64) error {
 		return errors.New("C.EPOLL_CTL_DEL error ")
 	}
 	e.lock.Lock()
-	defer e.lock.Unlock()
 	delete(e.connections, int(fd))
+	e.lock.Unlock()
 	return nil
 }
 
