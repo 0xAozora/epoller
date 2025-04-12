@@ -11,8 +11,26 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type Event = uint32
+
+const (
+	EPOLLIN      Event = unix.EPOLLIN
+	EPOLLPRI           = unix.EPOLLPRI
+	EPOLLOUT           = unix.EPOLLOUT
+	EPOLLERR           = unix.EPOLLERR
+	EPOLLHUP           = unix.EPOLLHUP
+	EPOLLRDNORM        = unix.EPOLLRDNORM
+	EPOLLRDBAND        = unix.EPOLLRDBAND
+	EPOLLWRNORM        = unix.EPOLLWRNORM
+	EPOLLWRBAND        = unix.EPOLLWRBAND
+	EPOLLMSG           = unix.EPOLLMSG
+	EPOLLRDHUP         = unix.EPOLLRDHUP
+	EPOLLONESHOT       = unix.EPOLLONESHOT
+)
+
 type epoll struct {
-	fd int
+	fd    int
+	event Event
 
 	conns          map[uint64]net.Conn
 	lock           *sync.RWMutex
@@ -21,14 +39,19 @@ type epoll struct {
 	events         []unix.EpollEvent
 }
 
-func NewPoller(connBufferSize int) (Poller, error) {
+func NewPoller(connBufferSize int, event Event) (Poller, error) {
 	fd, err := unix.EpollCreate1(0)
 	if err != nil {
 		return nil, err
 	}
-	return &epoll{
-		fd: fd,
 
+	if event == 0 {
+		event = EPOLLIN | EPOLLHUP
+	}
+
+	return &epoll{
+		fd:             fd,
+		event:          event,
 		lock:           &sync.RWMutex{},
 		conns:          make(map[uint64]net.Conn),
 		events:         make([]unix.EpollEvent, connBufferSize),
@@ -57,7 +80,7 @@ func (e *epoll) Add(conn net.Conn, fd uint64) error {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
-	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_ADD, int(fd), &unix.EpollEvent{Events: unix.POLLIN | unix.POLLHUP, Fd: int32(fd)})
+	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_ADD, int(fd), &unix.EpollEvent{Events: e.event, Fd: int32(fd)})
 	if err != nil {
 		return err
 	}

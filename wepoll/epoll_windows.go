@@ -13,8 +13,26 @@ import (
 	"sync"
 )
 
+type Event C.uint
+
+const (
+	EPOLLIN      Event = C.EPOLLIN
+	EPOLLPRI           = C.EPOLLPRI
+	EPOLLOUT           = C.EPOLLOUT
+	EPOLLERR           = C.EPOLLERR
+	EPOLLHUP           = C.EPOLLHUP
+	EPOLLRDNORM        = C.EPOLLRDNORM
+	EPOLLRDBAND        = C.EPOLLRDBAND
+	EPOLLWRNORM        = C.EPOLLWRNORM
+	EPOLLWRBAND        = C.EPOLLWRBAND
+	EPOLLMSG           = C.EPOLLMSG /* Never reported. */
+	EPOLLRDHUP         = C.EPOLLRDHUP
+	EPOLLONESHOT       = C.EPOLLONESHOT
+)
+
 type Epoll struct {
-	fd C.uintptr_t
+	fd    C.uintptr_t
+	event Event
 
 	conns          map[int]net.Conn
 	lock           *sync.RWMutex
@@ -23,14 +41,20 @@ type Epoll struct {
 	connBufferSize int
 }
 
-func NewPoller(connBufferSize int) (*Epoll, error) {
+func NewPoller(connBufferSize int, event Event) (*Epoll, error) {
 	fd := C.epoll_create1(0)
 
 	if fd == 0 {
 		return nil, errors.New("epoll_create1 error")
 	}
+
+	if event == 0 {
+		event = C.EPOLLIN | C.EPOLLHUP
+	}
+
 	return &Epoll{
 		fd:             fd,
+		event:          event,
 		lock:           &sync.RWMutex{},
 		conns:          make(map[int]net.Conn),
 		connbuf:        make([]net.Conn, connBufferSize),
@@ -65,7 +89,7 @@ func (e *Epoll) Add(conn net.Conn, f uint64) error {
 	// Extract file descriptor associated with the connection
 	fd := C.SOCKET(f)
 	var ev C.epoll_event
-	ev = C.set_epoll_event(C.EPOLLIN|C.EPOLLHUP, C.SOCKET(fd))
+	ev = C.set_epoll_event(C.uint32_t(e.event), C.SOCKET(fd))
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	err := C.epoll_ctl(e.fd, C.EPOLL_CTL_ADD, C.SOCKET(fd), &ev)

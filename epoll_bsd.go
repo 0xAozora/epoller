@@ -9,8 +9,16 @@ import (
 	"syscall"
 )
 
+type Event = int16
+
+const (
+	EPOLLIN  Event = syscall.EVFILT_READ
+	EPOLLOUT       = syscall.EVFILT_WRITE
+)
+
 type epoll struct {
-	fd int
+	fd    int
+	event Event
 
 	connBufferSize int
 	changes        []syscall.Kevent_t
@@ -22,7 +30,7 @@ type epoll struct {
 	polling bool
 }
 
-func NewPoller(connBufferSize int) (Poller, error) {
+func NewPoller(connBufferSize int, event Event) (Poller, error) {
 
 	p, err := syscall.Kqueue()
 	if err != nil {
@@ -37,8 +45,13 @@ func NewPoller(connBufferSize int) (Poller, error) {
 		panic(err)
 	}
 
+	if event == 0 {
+		event = EPOLLIN
+	}
+
 	return &epoll{
 		fd:             p,
+		event:          event,
 		mu:             &sync.RWMutex{},
 		conns:          make(map[uint64]net.Conn),
 		connbuf:        make([]net.Conn, connBufferSize),
@@ -68,7 +81,7 @@ func (e *epoll) Close(closeConns bool) error {
 func (e *epoll) Add(conn net.Conn, fd uint64) error {
 
 	event := syscall.Kevent_t{
-		Ident: fd, Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: syscall.EVFILT_READ,
+		Ident: fd, Flags: syscall.EV_ADD | syscall.EV_EOF, Filter: e.event,
 	}
 
 	e.mu.Lock()
@@ -91,7 +104,7 @@ func (e *epoll) Add(conn net.Conn, fd uint64) error {
 func (e *epoll) Remove(fd uint64) error {
 
 	event := syscall.Kevent_t{
-		Ident: fd, Flags: syscall.EV_DELETE, Filter: syscall.EVFILT_READ,
+		Ident: fd, Flags: syscall.EV_DELETE, Filter: e.event,
 	}
 
 	e.mu.Lock()

@@ -7,8 +7,9 @@ import (
 	"github.com/0xAozora/epoller/wepoll"
 )
 
+type Event = wepoll.Event
 type epoll = wepoll.Epoll
 
-func NewPoller(connBufferSize int) (Poller, error) {
-	return wepoll.NewPoller(connBufferSize)
+func NewPoller(connBufferSize int, event Event) (Poller, error) {
+	return wepoll.NewPoller(connBufferSize, event)
 }
