@@ -90,13 +90,13 @@ func (e *Epoll) Add(conn net.Conn, f uint64) error {
 	fd := C.SOCKET(f)
 	var ev C.epoll_event
 	ev = C.set_epoll_event(C.uint32_t(e.event), C.SOCKET(fd))
-	e.lock.Lock()
-	defer e.lock.Unlock()
 	err := C.epoll_ctl(e.fd, C.EPOLL_CTL_ADD, C.SOCKET(fd), &ev)
 	if err == -1 {
 		return errors.New("C.EPOLL_CTL_ADD error ")
 	}
+	e.lock.Lock()
 	e.conns[int(fd)] = conn
+	e.lock.Unlock()
 	return nil
 }
 

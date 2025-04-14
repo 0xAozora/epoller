@@ -77,14 +77,13 @@ func (e *epoll) Close(closeConns bool) error {
 }
 
 func (e *epoll) Add(conn net.Conn, fd uint64) error {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-
 	err := unix.EpollCtl(e.fd, syscall.EPOLL_CTL_ADD, int(fd), &unix.EpollEvent{Events: e.event, Fd: int32(fd)})
 	if err != nil {
 		return err
 	}
+	e.lock.Lock()
 	e.conns[fd] = conn
+	e.lock.Unlock()
 	return nil
 }
 

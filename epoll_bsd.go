@@ -95,15 +95,16 @@ func (e *epoll) Add(conn net.Conn, fd uint64) error {
 	}
 
 	e.mu.Lock()
-
 	if !e.polling {
 		e.changes = append(e.changes, event)
 	} else {
+		e.mu.Unlock()
 		syscall.Kevent(e.fd, []syscall.Kevent_t{{
 			Ident:  0,
 			Filter: syscall.EVFILT_USER,
 			Fflags: syscall.NOTE_TRIGGER,
 		}, event}, nil, nil)
+		e.mu.Lock()
 	}
 
 	e.conns[fd] = conn
@@ -118,15 +119,16 @@ func (e *epoll) Remove(fd uint64) error {
 	}
 
 	e.mu.Lock()
-
 	if !e.polling {
 		e.changes = append(e.changes, event)
 	} else {
+		e.mu.Unlock()
 		syscall.Kevent(e.fd, []syscall.Kevent_t{{
 			Ident:  0,
 			Filter: syscall.EVFILT_USER,
 			Fflags: syscall.NOTE_TRIGGER,
 		}, event}, nil, nil)
+		e.mu.Lock()
 	}
 
 	delete(e.conns, fd)
